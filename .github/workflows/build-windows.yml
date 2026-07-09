@@ -1,0 +1,61 @@
+name: Build Windows exe
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Tesseract OCR
+        run: choco install tesseract -y --no-progress
+
+      - name: Download OCR language packs (kor, jpn, chi_sim)
+        shell: pwsh
+        run: |
+          $tessdata = "C:\Program Files\Tesseract-OCR\tessdata"
+          foreach ($lang in @("kor", "jpn", "chi_sim")) {
+            Invoke-WebRequest "https://github.com/tesseract-ocr/tessdata_fast/raw/main/$lang.traineddata" -OutFile "$tessdata\$lang.traineddata"
+          }
+
+      - name: Copy Tesseract into build tree
+        shell: pwsh
+        run: Copy-Item "C:\Program Files\Tesseract-OCR" -Destination tesseract -Recurse
+
+      - name: Install Python dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build exe
+        run: >
+          pyinstaller --onefile --name ImageTranslator
+          --add-data "app/static;app/static"
+          --add-data "tesseract;tesseract"
+          desktop.py
+
+      - name: Smoke test exe
+        shell: pwsh
+        run: |
+          $proc = Start-Process dist\ImageTranslator.exe -PassThru
+          Start-Sleep -Seconds 20
+          $ok = $false
+          try {
+            $res = Invoke-WebRequest "http://127.0.0.1:8000/" -UseBasicParsing -TimeoutSec 5
+            if ($res.StatusCode -eq 200) { $ok = $true }
+          } catch {}
+          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          if (-not $ok) { throw "exe smoke test failed: server did not respond" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ImageTranslator-windows
+          path: dist/ImageTranslator.exe
