@@ -65,7 +65,7 @@
 </head>
 <body>
   <h1>🖼️ 이미지 번역기</h1>
-  <p class="sub">이미지를 업로드하면 텍스트를 추출해서 번역합니다. (붙여넣기 Ctrl+V 지원)</p>
+  <p class="sub">이미지를 업로드하면 이미지 속 텍스트를 번역문으로 치환한 이미지를 만들어 줍니다. (붙여넣기 Ctrl+V 지원)</p>
 
   <div class="card">
     <div id="drop">
@@ -99,6 +99,14 @@
       <button id="go" disabled>번역하기</button>
     </div>
     <div id="status"></div>
+  </div>
+
+  <div class="card" id="resultCard" style="display:none">
+    <div class="box-head">
+      <h2 style="font-size:.9rem;color:var(--muted)">번역된 이미지</h2>
+      <a id="download" download="translated.png"><button class="copy">다운로드</button></a>
+    </div>
+    <img id="resultImg" style="max-width:100%;border-radius:8px" alt="번역된 이미지">
   </div>
 
   <div class="results">
@@ -159,6 +167,7 @@ go.addEventListener('click', async () => {
   setStatus('텍스트 추출 및 번역 중...');
   document.getElementById('extracted').textContent = '';
   document.getElementById('translated').textContent = '';
+  document.getElementById('resultCard').style.display = 'none';
 
   const form = new FormData();
   form.append('file', currentFile);
@@ -171,6 +180,11 @@ go.addEventListener('click', async () => {
     if (!res.ok) throw new Error(data.detail || '요청 실패');
     document.getElementById('extracted').textContent = data.extracted;
     document.getElementById('translated').textContent = data.translated;
+    if (data.image) {
+      document.getElementById('resultImg').src = data.image;
+      document.getElementById('download').href = data.image;
+      document.getElementById('resultCard').style.display = 'block';
+    }
     setStatus(data.message || '완료!');
   } catch (err) {
     setStatus(err.message, true);

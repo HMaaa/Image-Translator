@@ -1,6 +1,6 @@
 # Image-Translator
 
-이미지를 업로드하면 텍스트만 추출(OCR)해서 번역해 주는 웹 애플리케이션입니다.
+이미지를 업로드하면 이미지 속 텍스트를 추출(OCR)해서 번역하고, **원본 텍스트 자리를 번역문으로 치환한 이미지**를 만들어 주는 웹 애플리케이션입니다.
 
 ![동작 화면](docs/screenshot.png)
 
@@ -8,8 +8,9 @@
 
 - **이미지 업로드**: 클릭 선택, 드래그 앤 드롭, 클립보드 붙여넣기(Ctrl+V) 지원
 - **텍스트 추출 (OCR)**: Tesseract 기반 — 한국어 / 영어 / 일본어 / 중국어(간체) 인식
+- **번역문 치환 이미지 생성**: 원본 텍스트 블록의 배경색·글자색을 추정해서 그 자리에 번역문을 자연스럽게 그려 넣고, PNG로 다운로드 가능
 - **번역**: Google 번역으로 한국어, 영어, 일본어, 중국어, 스페인어, 프랑스어, 독일어 지원
-- 추출된 원문과 번역 결과를 나란히 보여주고, 복사 버튼 제공
+- 추출된 원문과 번역 결과 텍스트도 함께 표시 (복사 버튼 제공)
 
 ## 설치
 
@@ -57,9 +58,12 @@ curl -X POST http://127.0.0.1:8000/api/translate \
 {
   "extracted": "Hello, world!",
   "translated": "안녕, 세계!",
+  "image": "data:image/png;base64,....",
   "message": ""
 }
 ```
+
+`image`는 번역문으로 치환된 이미지의 PNG 데이터 URI입니다.
 
 ## Windows exe로 만들기
 
@@ -83,7 +87,7 @@ Copy-Item "C:\Program Files\Tesseract-OCR" -Destination tesseract -Recurse
 
 # 3. 빌드
 pip install -r requirements.txt pyinstaller
-pyinstaller --onefile --name ImageTranslator --add-data "app/static;app/static" --add-data "tesseract;tesseract" desktop.py
+pyinstaller --onefile --name ImageTranslator --add-data "app/static;app/static" --add-data "app/fonts;app/fonts" --add-data "tesseract;tesseract" desktop.py
 ```
 
 `dist\ImageTranslator.exe`가 생성됩니다. 실행하면 서버가 켜지고 브라우저가 자동으로 열립니다.
@@ -96,3 +100,5 @@ pyinstaller --onefile --name ImageTranslator --add-data "app/static;app/static" 
 
 - OCR 정확도는 이미지 품질에 크게 좌우됩니다. 해상도가 높고 글자가 선명한 이미지일수록 잘 인식됩니다.
 - 번역은 Google 번역 무료 엔드포인트를 사용하므로 인터넷 연결이 필요합니다.
+- 치환 렌더링은 단색에 가까운 배경에서 가장 자연스럽습니다. 사진처럼 복잡한 배경 위 텍스트는 배경색 추정이 어긋날 수 있습니다.
+- 번역문 렌더링에는 Noto Sans KR 폰트(`app/fonts/`, SIL OFL 라이선스)를 사용합니다.

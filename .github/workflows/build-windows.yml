@@ -39,6 +39,7 @@ jobs:
         run: >
           pyinstaller --onefile --name ImageTranslator
           --add-data "app/static;app/static"
+          --add-data "app/fonts;app/fonts"
           --add-data "tesseract;tesseract"
           desktop.py
 
