@@ -6,9 +6,9 @@ from pathlib import Path
 import pytesseract
 from PIL import Image, ImageDraw, ImageFont
 
-# 번역문 렌더링용 폰트 후보 (앞에서부터 탐색)
+# 번역문 렌더링 폰트: Noto Serif KR로 통일 (번들 파일이 없을 때만 시스템 폰트 폴백)
 FONT_CANDIDATES = [
-    Path(__file__).parent / "fonts" / "NotoSansKR-Regular.ttf",
+    Path(__file__).parent / "fonts" / "NotoSerifKR-Regular.ttf",
     Path("C:/Windows/Fonts/malgun.ttf"),
     Path("/System/Library/Fonts/AppleSDGothicNeo.ttc"),
     Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),

@@ -38,10 +38,13 @@
   #preview { max-width: 100%; max-height: 320px; border-radius: 8px; margin-top: 1rem; display: none; }
   .controls { display: flex; flex-wrap: wrap; gap: .75rem; align-items: end; margin-top: 1rem; }
   label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: .25rem; }
-  select {
+  select, input[type=password], input[type=text], textarea {
     padding: .5rem .6rem; border-radius: 8px; border: 1px solid var(--border);
     background: var(--card); color: var(--text); font-size: .95rem;
+    font-family: inherit;
   }
+  input[type=password], textarea { width: 100%; }
+  label code { font-size: .75rem; }
   button {
     padding: .6rem 1.4rem; border: none; border-radius: 8px;
     background: var(--accent); color: #fff; font-size: 1rem; cursor: pointer;
@@ -97,6 +100,22 @@
         </select>
       </div>
       <button id="go" disabled>번역하기</button>
+    </div>
+    <div class="controls">
+      <div style="flex:1;min-width:220px">
+        <label for="apiKey">OpenAI API 키 (필수)</label>
+        <input type="password" id="apiKey" placeholder="sk-..." autocomplete="off">
+      </div>
+      <div>
+        <label for="model">모델</label>
+        <input type="text" id="model" value="gpt-5.5">
+      </div>
+    </div>
+    <div class="controls">
+      <div style="flex:1">
+        <label for="glossary">사용자 사전 (선택) — 한 줄에 하나씩 <code>원문=번역</code> 형식. 번역 시 반드시 이 표기를 따릅니다</label>
+        <textarea id="glossary" rows="3" placeholder="예)&#10;Acme Corp=아크메&#10;free shipping=무료 배송"></textarea>
+      </div>
     </div>
     <div id="status"></div>
   </div>
@@ -173,6 +192,15 @@ go.addEventListener('click', async () => {
   form.append('file', currentFile);
   form.append('ocr_lang', document.getElementById('ocrLang').value);
   form.append('target_lang', document.getElementById('targetLang').value);
+  const apiKey = document.getElementById('apiKey').value.trim();
+  if (!apiKey) {
+    setStatus('OpenAI API 키를 입력해 주세요.', true);
+    go.disabled = false;
+    return;
+  }
+  form.append('api_key', apiKey);
+  form.append('model', document.getElementById('model').value.trim());
+  form.append('glossary', document.getElementById('glossary').value);
 
   try {
     const res = await fetch('/api/translate', { method: 'POST', body: form });
@@ -185,13 +213,25 @@ go.addEventListener('click', async () => {
       document.getElementById('download').href = data.image;
       document.getElementById('resultCard').style.display = 'block';
     }
-    setStatus(data.message || '완료!');
+    setStatus(data.message || (data.engine ? `완료! (${data.engine})` : '완료!'));
   } catch (err) {
     setStatus(err.message, true);
   } finally {
     go.disabled = false;
   }
 });
+
+// API 키/모델/사용자 사전을 브라우저에 저장해서 다시 입력하지 않아도 되게 한다
+const persisted = [
+  ['apiKey', 'openaiApiKey', ''],
+  ['model', 'openaiModel', 'gpt-5.5'],
+  ['glossary', 'userGlossary', ''],
+];
+for (const [id, key, def] of persisted) {
+  const el = document.getElementById(id);
+  el.value = localStorage.getItem(key) || def;
+  el.addEventListener('input', () => localStorage.setItem(key, el.value));
+}
 
 document.querySelectorAll('.copy').forEach(btn => {
   btn.addEventListener('click', async () => {

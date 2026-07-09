@@ -1,15 +1,18 @@
 # Image-Translator
 
-이미지를 업로드하면 이미지 속 텍스트를 추출(OCR)해서 번역하고, **원본 텍스트 자리를 번역문으로 치환한 이미지**를 만들어 주는 웹 애플리케이션입니다.
+이미지를 업로드하면 OpenAI(GPT) API로 이미지 속 텍스트를 번역하고, **원본 텍스트 자리를 번역문으로 치환한 이미지**를 만들어 주는 웹 애플리케이션입니다.
 
 ![동작 화면](docs/screenshot.png)
 
 ## 기능
 
 - **이미지 업로드**: 클릭 선택, 드래그 앤 드롭, 클립보드 붙여넣기(Ctrl+V) 지원
-- **텍스트 추출 (OCR)**: Tesseract 기반 — 한국어 / 영어 / 일본어 / 중국어(간체) 인식
+- **GPT 이미지 번역**: 이미지 전체와 OCR 텍스트 블록을 GPT에 함께 보내 문맥을 반영한 번역을 받습니다. GPT가 이미지를 직접 보므로 OCR 오탈자도 보정됩니다
+- **사용자 사전**: `원문=번역` 형식으로 용어를 등록하면 번역 시 반드시 해당 표기를 따릅니다 (고유명사, 브랜드명 등)
 - **번역문 치환 이미지 생성**: 원본 텍스트 블록의 배경색·글자색을 추정해서 그 자리에 번역문을 자연스럽게 그려 넣고, PNG로 다운로드 가능
-- **번역**: Google 번역으로 한국어, 영어, 일본어, 중국어, 스페인어, 프랑스어, 독일어 지원
+- 텍스트 위치 추출(OCR): Tesseract 기반 — 한국어 / 영어 / 일본어 / 중국어(간체)
+- 번역 대상 언어: 한국어, 영어, 일본어, 중국어, 스페인어, 프랑스어, 독일어
+- API 키·모델·사용자 사전은 브라우저(localStorage)에만 저장되고 서버에 남지 않습니다
 - 추출된 원문과 번역 결과 텍스트도 함께 표시 (복사 버튼 제공)
 
 ## 설치
@@ -39,7 +42,8 @@ pip install -r requirements.txt
 uvicorn app.main:app --port 8000
 ```
 
-브라우저에서 http://127.0.0.1:8000 접속 후 이미지를 업로드하면 됩니다.
+브라우저에서 http://127.0.0.1:8000 접속 후 OpenAI API 키를 입력하고 이미지를 업로드하면 됩니다.
+API 키는 https://platform.openai.com/api-keys 에서 발급받을 수 있습니다.
 
 ## API
 
@@ -48,8 +52,11 @@ UI 없이 직접 호출할 수도 있습니다.
 ```bash
 curl -X POST http://127.0.0.1:8000/api/translate \
   -F "file=@image.png" \
-  -F "ocr_lang=auto" \      # auto | kor | eng | jpn | chi_sim
-  -F "target_lang=ko"       # ko | en | ja | zh-CN | es | fr | de ...
+  -F "ocr_lang=auto" \                # auto | kor | eng | jpn | chi_sim
+  -F "target_lang=ko" \               # ko | en | ja | zh-CN | es | fr | de ...
+  -F "api_key=sk-..." \               # (필수) OpenAI API 키
+  -F "model=gpt-5.5" \                # (선택) 모델명
+  -F "glossary=Acme Corp=아크메"      # (선택) 사용자 사전, 한 줄에 하나
 ```
 
 응답:
@@ -59,6 +66,7 @@ curl -X POST http://127.0.0.1:8000/api/translate \
   "extracted": "Hello, world!",
   "translated": "안녕, 세계!",
   "image": "data:image/png;base64,....",
+  "engine": "OpenAI gpt-5.5",
   "message": ""
 }
 ```
@@ -99,6 +107,7 @@ pyinstaller --onefile --name ImageTranslator --add-data "app/static;app/static" 
 ## 참고
 
 - OCR 정확도는 이미지 품질에 크게 좌우됩니다. 해상도가 높고 글자가 선명한 이미지일수록 잘 인식됩니다.
-- 번역은 Google 번역 무료 엔드포인트를 사용하므로 인터넷 연결이 필요합니다.
+- 번역은 OpenAI API를 호출하므로 인터넷 연결과 API 키가 필요합니다 (사용량만큼 과금).
+- `OPENAI_BASE_URL` 환경변수로 API 베이스 URL을 바꿀 수 있습니다 (프록시/호환 서버용, 기본값 `https://api.openai.com/v1`).
 - 치환 렌더링은 단색에 가까운 배경에서 가장 자연스럽습니다. 사진처럼 복잡한 배경 위 텍스트는 배경색 추정이 어긋날 수 있습니다.
-- 번역문 렌더링에는 Noto Sans KR 폰트(`app/fonts/`, SIL OFL 라이선스)를 사용합니다.
+- 번역문 렌더링에는 Noto Serif KR 폰트(`app/fonts/`, SIL OFL 라이선스)를 사용합니다.
