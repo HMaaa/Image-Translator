@@ -1,9 +1,8 @@
-"""OCR 텍스트 블록 추출과 번역문 치환 렌더링."""
+"""텍스트 블록 자리에 번역문을 그려 넣는 치환 렌더링."""
 
 import statistics
 from pathlib import Path
 
-import pytesseract
 from PIL import Image, ImageDraw, ImageFont
 
 # 번역문 렌더링 폰트: Noto Serif KR로 통일 (번들 파일이 없을 때만 시스템 폰트 폴백)
@@ -15,56 +14,11 @@ FONT_CANDIDATES = [
     Path("/usr/share/fonts/opentype/unifont/unifont.otf"),
 ]
 
-MIN_CONFIDENCE = 30  # 이 미만 평균 신뢰도의 블록은 노이즈로 간주
-
-
 def find_font() -> str:
     for path in FONT_CANDIDATES:
         if path.exists():
             return str(path)
     raise RuntimeError("한글을 지원하는 폰트를 찾지 못했습니다.")
-
-
-def extract_paragraphs(image: Image.Image, lang: str, scale: float = 1.0) -> list[dict]:
-    """문단 단위 텍스트 블록을 추출한다. 좌표는 원본 이미지 기준으로 환산."""
-    data = pytesseract.image_to_data(image, lang=lang, output_type=pytesseract.Output.DICT)
-    groups: dict[tuple, dict] = {}
-    for i, raw in enumerate(data["text"]):
-        word = raw.strip()
-        conf = float(data["conf"][i])
-        if not word or conf < 0:
-            continue
-        key = (data["block_num"][i], data["par_num"][i])
-        g = groups.setdefault(key, {"words": [], "confs": []})
-        g["words"].append({
-            "text": word,
-            "line": data["line_num"][i],
-            "x": data["left"][i],
-            "y": data["top"][i],
-            "w": data["width"][i],
-            "h": data["height"][i],
-        })
-        g["confs"].append(conf)
-
-    paragraphs = []
-    for g in groups.values():
-        if statistics.mean(g["confs"]) < MIN_CONFIDENCE:
-            continue
-        words = g["words"]
-        lines: dict[int, list[str]] = {}
-        for w in words:
-            lines.setdefault(w["line"], []).append(w["text"])
-        text = "\n".join(" ".join(ws) for _, ws in sorted(lines.items()))
-        x0 = min(w["x"] for w in words)
-        y0 = min(w["y"] for w in words)
-        x1 = max(w["x"] + w["w"] for w in words)
-        y1 = max(w["y"] + w["h"] for w in words)
-        paragraphs.append({
-            "text": text,
-            "box": tuple(round(v / scale) for v in (x0, y0, x1, y1)),
-            "line_height": statistics.median(w["h"] for w in words) / scale,
-        })
-    return paragraphs
 
 
 def _color_distance(a: tuple, b: tuple) -> float:
@@ -143,7 +97,7 @@ def render_translated(image: Image.Image, paragraphs: list[dict]) -> Image.Image
             continue
         x0, y0, x1, y1 = p["box"]
         bg, fg = estimate_colors(out, p["box"])
-        pad = max(2, round(p["line_height"] * 0.15))
+        pad = min(12, max(2, round(p["line_height"] * 0.15)))
         draw.rectangle((x0 - pad, y0 - pad, x1 + pad, y1 + pad), fill=bg)
         font, lines, line_h = _fit_text(
             draw, translated, x1 - x0, y1 - y0, font_path, p["line_height"] * 0.85

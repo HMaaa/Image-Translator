@@ -15,21 +15,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install Tesseract OCR
-        run: choco install tesseract -y --no-progress
-
-      - name: Download OCR language packs (kor, jpn, chi_sim)
-        shell: pwsh
-        run: |
-          $tessdata = "C:\Program Files\Tesseract-OCR\tessdata"
-          foreach ($lang in @("kor", "jpn", "chi_sim")) {
-            Invoke-WebRequest "https://github.com/tesseract-ocr/tessdata_fast/raw/main/$lang.traineddata" -OutFile "$tessdata\$lang.traineddata"
-          }
-
-      - name: Copy Tesseract into build tree
-        shell: pwsh
-        run: Copy-Item "C:\Program Files\Tesseract-OCR" -Destination tesseract -Recurse
-
       - name: Install Python dependencies
         run: |
           pip install -r requirements.txt
@@ -40,7 +25,6 @@ jobs:
           pyinstaller --onefile --name ImageTranslator
           --add-data "app/static;app/static"
           --add-data "app/fonts;app/fonts"
-          --add-data "tesseract;tesseract"
           desktop.py
 
       - name: Smoke test exe

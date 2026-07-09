@@ -78,16 +78,6 @@
     <input type="file" id="fileInput" accept="image/*">
     <div class="controls">
       <div>
-        <label for="ocrLang">이미지 속 언어 (OCR)</label>
-        <select id="ocrLang">
-          <option value="auto">자동 (한/영/일/중)</option>
-          <option value="eng">영어</option>
-          <option value="kor">한국어</option>
-          <option value="jpn">일본어</option>
-          <option value="chi_sim">중국어 (간체)</option>
-        </select>
-      </div>
-      <div>
         <label for="targetLang">번역할 언어</label>
         <select id="targetLang">
           <option value="ko">한국어</option>
@@ -190,7 +180,6 @@ go.addEventListener('click', async () => {
 
   const form = new FormData();
   form.append('file', currentFile);
-  form.append('ocr_lang', document.getElementById('ocrLang').value);
   form.append('target_lang', document.getElementById('targetLang').value);
   const apiKey = document.getElementById('apiKey').value.trim();
   if (!apiKey) {
