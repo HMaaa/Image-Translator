@@ -1,6 +1,7 @@
-"""이미지 업로드 → OpenAI(GPT) API로 이미지 번역 → 번역문 치환 이미지 생성 웹 앱.
+"""이미지 업로드 → GPT 분석(텍스트 인식·번역) → GPT 이미지 2.0(gpt-image-2)로 번역문 치환 이미지 생성.
 
-이미지와 사용자 사전만 GPT에 보내면 텍스트 인식·번역·위치 추정까지 한 번에 받아온다.
+1단계(분석): 비전 모델이 이미지와 사용자 사전을 읽고 블록별 원문/번역을 만든다.
+2단계(생성): 번역 결과로 조립한 최종 프롬프트를 이미지 편집 API에 보내 치환된 이미지를 받는다.
 """
 
 import base64
@@ -15,8 +16,6 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageOps
 
-from app.render import render_translated
-
 app = FastAPI(title="Image Translator")
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -25,7 +24,9 @@ MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10MB
 
 # 테스트나 프록시 환경을 위해 베이스 URL을 바꿀 수 있게 한다
 OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
-DEFAULT_MODEL = "gpt-5.5"
+
+ANALYSIS_MODELS = {"fast": "gpt-5.4-mini", "pro": "gpt-5.5"}
+GENERATION_MODELS = {"fast": "gpt-image-1-mini", "pro": "gpt-image-2"}
 
 LANG_NAMES = {
     "ko": "Korean",
@@ -37,11 +38,29 @@ LANG_NAMES = {
     "de": "German",
 }
 
-# GPT가 블록별 원문/번역/위치를 정해진 형식으로만 응답하도록 강제한다
-RESPONSE_SCHEMA = {
+ACCURACY_NOTES = {
+    "fast": "Translate quickly and naturally.",
+    "balanced": "Translate naturally while keeping meaning accurate.",
+    "precise": (
+        "Carefully verify every number, unit, date, and proper noun. "
+        "Prefer precise terminology over fluency. Re-read the image to "
+        "double-check ambiguous characters before translating."
+    ),
+}
+
+ENHANCE_NOTES = {
+    "none": "",
+    "sharpen": "Also subtly enhance overall sharpness and clean up compression artifacts.",
+    "clean": (
+        "Also clean up the image: remove noise and compression artifacts, "
+        "and make the background around replaced text uniform and tidy."
+    ),
+}
+
+ANALYSIS_SCHEMA = {
     "type": "json_schema",
     "json_schema": {
-        "name": "image_translation",
+        "name": "image_text_translation",
         "strict": True,
         "schema": {
             "type": "object",
@@ -53,13 +72,8 @@ RESPONSE_SCHEMA = {
                         "properties": {
                             "text": {"type": "string"},
                             "translation": {"type": "string"},
-                            "x0": {"type": "integer"},
-                            "y0": {"type": "integer"},
-                            "x1": {"type": "integer"},
-                            "y1": {"type": "integer"},
-                            "lines": {"type": "integer"},
                         },
-                        "required": ["text", "translation", "x0", "y0", "x1", "y1", "lines"],
+                        "required": ["text", "translation"],
                         "additionalProperties": False,
                     },
                 }
@@ -71,15 +85,16 @@ RESPONSE_SCHEMA = {
 }
 
 
-def translate_image_with_gpt(
+def analyze_image(
     image_bytes: bytes,
     mime: str,
     target_lang: str,
     api_key: str,
     model: str,
     glossary: str,
+    accuracy: str,
 ) -> list[dict]:
-    """이미지를 GPT에 보내 텍스트 블록(원문/번역/위치) 목록을 받아온다."""
+    """분석 모델로 이미지 속 텍스트 블록(원문/번역)을 추출한다."""
     lang_name = LANG_NAMES.get(target_lang, target_lang)
 
     glossary_part = ""
@@ -90,16 +105,11 @@ def translate_image_with_gpt(
         )
 
     instruction = (
-        "Find every distinct text block in the attached image (a block is a title, "
-        "a paragraph, a label, a button caption, etc.). For each block report:\n"
-        f"- text: the original text exactly as written\n"
-        f"- translation: the text translated into {lang_name}. Keep numbers, prices, "
-        "and proper nouns accurate\n"
-        "- x0, y0, x1, y1: a tight bounding box around the text, in a normalized "
-        "coordinate system where (0,0) is the top-left corner of the image and "
-        "(1000,1000) is the bottom-right corner\n"
-        "- lines: how many visual lines the original text occupies\n"
-        "List the blocks in reading order. Do not invent text that is not in the image."
+        "Find every distinct piece of text in the attached image (titles, paragraphs, "
+        "labels, buttons, captions). For each, report the original text exactly as "
+        f"written and its translation into {lang_name}. "
+        f"{ACCURACY_NOTES.get(accuracy, ACCURACY_NOTES['balanced'])} "
+        "List blocks in reading order. Do not invent text that is not in the image."
         f"{glossary_part}"
     )
 
@@ -109,11 +119,11 @@ def translate_image_with_gpt(
         headers={"Authorization": f"Bearer {api_key}"},
         json={
             "model": model,
-            "response_format": RESPONSE_SCHEMA,
+            "response_format": ANALYSIS_SCHEMA,
             "messages": [
                 {
                     "role": "system",
-                    "content": "You are a professional translator that reads text in images precisely, including its position.",
+                    "content": "You are a professional translator that reads text in images precisely.",
                 },
                 {
                     "role": "user",
@@ -130,40 +140,87 @@ def translate_image_with_gpt(
         timeout=180,
     )
     if resp.status_code != 200:
-        try:
-            detail = resp.json()["error"]["message"]
-        except Exception:
-            detail = resp.text[:300]
-        raise RuntimeError(f"OpenAI API 오류 (HTTP {resp.status_code}): {detail}")
+        raise RuntimeError(f"분석 모델 오류 (HTTP {resp.status_code}): {_api_error(resp)}")
 
     content = resp.json()["choices"][0]["message"]["content"]
-    return json.loads(content)["blocks"]
+    blocks = json.loads(content)["blocks"]
+    return [
+        {"text": str(b["text"]).strip(), "translation": str(b["translation"]).strip()}
+        for b in blocks
+        if str(b.get("text", "")).strip() and str(b.get("translation", "")).strip()
+    ]
 
 
-def blocks_to_paragraphs(blocks: list[dict], width: int, height: int) -> list[dict]:
-    """GPT의 정규화 좌표(0~1000)를 픽셀 좌표로 바꿔 렌더링용 문단 목록을 만든다."""
-    paragraphs = []
-    for b in blocks:
-        text = str(b.get("text", "")).strip()
-        translated = str(b.get("translation", "")).strip()
-        if not text or not translated:
-            continue
-        x0 = round(min(b["x0"], b["x1"]) / 1000 * width)
-        x1 = round(max(b["x0"], b["x1"]) / 1000 * width)
-        y0 = round(min(b["y0"], b["y1"]) / 1000 * height)
-        y1 = round(max(b["y0"], b["y1"]) / 1000 * height)
-        x0, y0 = max(0, x0), max(0, y0)
-        x1, y1 = min(width, x1), min(height, y1)
-        if x1 - x0 < 4 or y1 - y0 < 4:
-            continue
-        lines = max(1, int(b.get("lines", 1)))
-        paragraphs.append({
-            "text": text,
-            "translated": translated,
-            "box": (x0, y0, x1, y1),
-            "line_height": (y1 - y0) / lines,
-        })
-    return paragraphs
+def build_generation_prompt(blocks: list[dict], target_lang: str, enhance: str) -> str:
+    """분석 결과로 이미지 편집(생성) 모델에 보낼 최종 프롬프트를 조립한다."""
+    lang_name = LANG_NAMES.get(target_lang, target_lang)
+    lines = "\n".join(
+        f'{i + 1}. "{b["text"]}" → "{b["translation"]}"' for i, b in enumerate(blocks)
+    )
+    prompt = (
+        f"Edit this image: replace every piece of visible text with its {lang_name} "
+        "translation below, as if the image had originally been made in "
+        f"{lang_name}. Keep the layout, font style, text size, colors, and "
+        "background exactly the same. Do not alter any non-text elements.\n\n"
+        f"Translations to apply:\n{lines}"
+    )
+    enhance_note = ENHANCE_NOTES.get(enhance, "")
+    if enhance_note:
+        prompt += f"\n\n{enhance_note}"
+    return prompt
+
+
+def resolve_size(gen_model: str, width: int, height: int, output_size: str) -> str:
+    """출력 크기(1k/2k/4k)와 원본 비율로 이미지 API의 size 파라미터를 계산한다."""
+    if gen_model == "gpt-image-2":
+        long_edge = {"1k": 1024, "2k": 2048, "4k": 3840}.get(output_size, 1024)
+        scale = long_edge / max(width, height)
+        w, h = width * scale, height * scale
+        # gpt-image-2 한계: 최대 3840x2160(가로) / 2160x3840(세로), 비율 1:3~3:1
+        max_w, max_h = (3840, 2160) if width >= height else (2160, 3840)
+        shrink = min(1.0, max_w / w, max_h / h)
+        w, h = w * shrink, h * shrink
+        if w / h > 3:
+            h = w / 3
+        elif h / w > 3:
+            w = h / 3
+        to16 = lambda v: max(16, round(v / 16) * 16)
+        return f"{to16(w)}x{to16(h)}"
+    # gpt-image-1 계열은 고정 크기만 지원
+    if width > height:
+        return "1536x1024"
+    if height > width:
+        return "1024x1536"
+    return "1024x1024"
+
+
+def generate_image(
+    image_bytes: bytes,
+    mime: str,
+    filename: str,
+    prompt: str,
+    api_key: str,
+    model: str,
+    size: str,
+) -> bytes:
+    """이미지 편집 API(gpt-image-2 등)로 번역문이 반영된 이미지를 생성한다."""
+    resp = requests.post(
+        f"{OPENAI_BASE_URL}/images/edits",
+        headers={"Authorization": f"Bearer {api_key}"},
+        files={"image": (filename or "image.png", image_bytes, mime)},
+        data={"model": model, "prompt": prompt, "size": size, "n": "1"},
+        timeout=300,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"생성 모델 오류 (HTTP {resp.status_code}): {_api_error(resp)}")
+    return base64.b64decode(resp.json()["data"][0]["b64_json"])
+
+
+def _api_error(resp: requests.Response) -> str:
+    try:
+        return resp.json()["error"]["message"]
+    except Exception:
+        return resp.text[:300]
 
 
 @app.get("/")
@@ -176,13 +233,19 @@ async def translate_image(
     file: UploadFile = File(...),
     target_lang: str = Form("ko"),
     api_key: str = Form(""),
-    model: str = Form(DEFAULT_MODEL),
+    analysis_model: str = Form("fast"),
+    generation_model: str = Form("pro"),
+    accuracy: str = Form("balanced"),
+    enhance: str = Form("none"),
+    output_size: str = Form("1k"),
     glossary: str = Form(""),
 ) -> dict:
     api_key = api_key.strip()
     if not api_key:
         raise HTTPException(status_code=400, detail="OpenAI API 키를 입력해 주세요.")
-    model = model.strip() or DEFAULT_MODEL
+
+    a_model = ANALYSIS_MODELS.get(analysis_model, ANALYSIS_MODELS["fast"])
+    g_model = GENERATION_MODELS.get(generation_model, GENERATION_MODELS["pro"])
 
     data = await file.read()
     if not data:
@@ -197,34 +260,55 @@ async def translate_image(
     except Exception:
         raise HTTPException(status_code=400, detail="이미지 파일을 열 수 없습니다. PNG/JPG 등 이미지 형식인지 확인해 주세요.")
 
+    mime = file.content_type or "image/png"
+
+    # 1단계: 분석 (텍스트 인식 + 번역)
     try:
-        blocks = translate_image_with_gpt(
+        blocks = analyze_image(
             image_bytes=data,
-            mime=file.content_type or "image/png",
+            mime=mime,
             target_lang=target_lang,
             api_key=api_key,
-            model=model,
+            model=a_model,
             glossary=glossary,
+            accuracy=accuracy,
         )
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"번역 실패: {e}")
+        raise HTTPException(status_code=502, detail=f"분석 실패: {e}")
 
-    paragraphs = blocks_to_paragraphs(blocks, image.width, image.height)
-    if not paragraphs:
-        return {"extracted": "", "translated": "", "image": "", "engine": f"OpenAI {model}", "message": "이미지에서 텍스트를 찾지 못했습니다."}
+    if not blocks:
+        return {
+            "extracted": "", "translated": "", "prompt": "", "image": "",
+            "engine": f"{a_model} + {g_model}",
+            "message": "이미지에서 텍스트를 찾지 못했습니다.",
+        }
 
-    rendered = render_translated(image, paragraphs)
-    buf = io.BytesIO()
-    rendered.save(buf, format="PNG")
-    image_b64 = base64.b64encode(buf.getvalue()).decode()
+    # 2단계: 최종 프롬프트 조립 → 이미지 생성
+    prompt = build_generation_prompt(blocks, target_lang, enhance)
+    size = resolve_size(g_model, image.width, image.height, output_size)
+    try:
+        out_bytes = generate_image(
+            image_bytes=data,
+            mime=mime,
+            filename=file.filename or "image.png",
+            prompt=prompt,
+            api_key=api_key,
+            model=g_model,
+            size=size,
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"이미지 생성 실패: {e}")
 
     return {
-        "extracted": "\n\n".join(p["text"] for p in paragraphs),
-        "translated": "\n\n".join(p["translated"] for p in paragraphs),
-        "image": f"data:image/png;base64,{image_b64}",
-        "engine": f"OpenAI {model}",
+        "extracted": "\n\n".join(b["text"] for b in blocks),
+        "translated": "\n\n".join(b["translation"] for b in blocks),
+        "prompt": prompt,
+        "image": f"data:image/png;base64,{base64.b64encode(out_bytes).decode()}",
+        "engine": f"{a_model} + {g_model} ({size})",
         "message": "",
     }
 

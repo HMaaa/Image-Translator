@@ -24,7 +24,6 @@ jobs:
         run: >
           pyinstaller --onefile --name ImageTranslator
           --add-data "app/static;app/static"
-          --add-data "app/fonts;app/fonts"
           desktop.py
 
       - name: Smoke test exe
