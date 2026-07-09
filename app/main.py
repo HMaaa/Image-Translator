@@ -57,6 +57,28 @@ ENHANCE_NOTES = {
     ),
 }
 
+
+def accuracy_key(value: str) -> str:
+    """슬라이더 값(0~1) 또는 레거시 문자열을 정확도 단계로 변환."""
+    if value in ACCURACY_NOTES:
+        return value
+    try:
+        v = float(value)
+    except ValueError:
+        return "balanced"
+    return "fast" if v < 0.33 else ("balanced" if v < 0.66 else "precise")
+
+
+def enhance_key(value: str) -> str:
+    """슬라이더 값(0~1) 또는 레거시 문자열을 보정 단계로 변환."""
+    if value in ENHANCE_NOTES:
+        return value
+    try:
+        v = float(value)
+    except ValueError:
+        return "none"
+    return "none" if v < 0.2 else ("sharpen" if v < 0.6 else "clean")
+
 ANALYSIS_SCHEMA = {
     "type": "json_schema",
     "json_schema": {
@@ -85,26 +107,16 @@ ANALYSIS_SCHEMA = {
 }
 
 
-def analyze_image(
-    image_bytes: bytes,
-    mime: str,
-    target_lang: str,
-    api_key: str,
-    model: str,
-    glossary: str,
-    accuracy: str,
-) -> list[dict]:
-    """분석 모델로 이미지 속 텍스트 블록(원문/번역)을 추출한다."""
+def build_analysis_prompt(target_lang: str, glossary: str, accuracy: str) -> str:
+    """분석 모델에 보낼 지시문을 조립한다."""
     lang_name = LANG_NAMES.get(target_lang, target_lang)
-
     glossary_part = ""
     if glossary.strip():
         glossary_part = (
             "\n\nUser dictionary (MUST be applied exactly; format: source=translation):\n"
             + glossary.strip()
         )
-
-    instruction = (
+    return (
         "Find every distinct piece of text in the attached image (titles, paragraphs, "
         "labels, buttons, captions). For each, report the original text exactly as "
         f"written and its translation into {lang_name}. "
@@ -113,6 +125,15 @@ def analyze_image(
         f"{glossary_part}"
     )
 
+
+def analyze_image(
+    image_bytes: bytes,
+    mime: str,
+    instruction: str,
+    api_key: str,
+    model: str,
+) -> list[dict]:
+    """분석 모델로 이미지 속 텍스트 블록(원문/번역)을 추출한다."""
     image_b64 = base64.b64encode(image_bytes).decode()
     resp = requests.post(
         f"{OPENAI_BASE_URL}/chat/completions",
@@ -246,6 +267,8 @@ async def translate_image(
 
     a_model = ANALYSIS_MODELS.get(analysis_model, ANALYSIS_MODELS["fast"])
     g_model = GENERATION_MODELS.get(generation_model, GENERATION_MODELS["pro"])
+    accuracy = accuracy_key(accuracy)
+    enhance = enhance_key(enhance)
 
     data = await file.read()
     if not data:
@@ -263,15 +286,14 @@ async def translate_image(
     mime = file.content_type or "image/png"
 
     # 1단계: 분석 (텍스트 인식 + 번역)
+    analysis_prompt = build_analysis_prompt(target_lang, glossary, accuracy)
     try:
         blocks = analyze_image(
             image_bytes=data,
             mime=mime,
-            target_lang=target_lang,
+            instruction=analysis_prompt,
             api_key=api_key,
             model=a_model,
-            glossary=glossary,
-            accuracy=accuracy,
         )
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e))
@@ -280,8 +302,8 @@ async def translate_image(
 
     if not blocks:
         return {
-            "extracted": "", "translated": "", "prompt": "", "image": "",
-            "engine": f"{a_model} + {g_model}",
+            "extracted": "", "translated": "", "prompt": "", "analysis_prompt": analysis_prompt,
+            "image": "", "engine": f"{a_model} + {g_model}",
             "message": "이미지에서 텍스트를 찾지 못했습니다.",
         }
 
@@ -307,6 +329,7 @@ async def translate_image(
         "extracted": "\n\n".join(b["text"] for b in blocks),
         "translated": "\n\n".join(b["translation"] for b in blocks),
         "prompt": prompt,
+        "analysis_prompt": analysis_prompt,
         "image": f"data:image/png;base64,{base64.b64encode(out_bytes).decode()}",
         "engine": f"{a_model} + {g_model} ({size})",
         "message": "",

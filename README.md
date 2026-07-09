@@ -11,19 +11,21 @@
 
 ## 화면 구성
 
-가로 3단 배치: **이미지 | 사용자 사전 | 설정**
+가로 3단 배치: **번역 대기열 | 사용자 사전 | 설정**
 
-- **이미지**: 클릭 선택, 드래그 앤 드롭, 클립보드 붙여넣기(Ctrl+V)
-- **사용자 사전**: 한 줄에 하나씩 `원문=번역` — 번역 시 반드시 해당 표기를 따릅니다
+- **상단 앱바**: 전체 다운로드(완료된 이미지 일괄 저장), 대기열 비우기
+- **번역 대기열**: 여러 장을 클릭/드래그/붙여넣기(Ctrl+V)로 추가하고 **일괄 번역 시작**으로 순차 처리. 항목을 클릭하면 해당 결과를 볼 수 있습니다
+- **사용자 사전 & 용어집**: `원문=번역` 줄 형식 또는 JSON — 번역 시 반드시 해당 표기를 따릅니다. **프리셋**으로 저장/불러오기/삭제 가능
 - **설정**:
   - 번역할 언어: 한국어 / 영어 / 일본어 / 중국어 / 스페인어 / 프랑스어 / 독일어
-  - 번역 정확도: 빠름 / 균형 / 정밀 (정밀은 숫자·단위·고유명사 검증 지시 추가)
-  - 분석 모델: 빠름 `gpt-5.4-mini` / 프로 `gpt-5.5`
-  - 생성 모델: 프로 `gpt-image-2` / 빠름 `gpt-image-1-mini`
-  - 이미지 보정: 없음 / 선명하게 / 노이즈·배경 정리
+  - 분석 정확성 (번역 정확도): 슬라이더 0~1 — 높을수록 숫자·단위·고유명사 검증 지시 추가
+  - 생성 정확성 (이미지 보정): 슬라이더 0~1 — 0은 원본 유지, 높을수록 선명화·노이즈 정리
+  - 분석 모델: Flash `gpt-5.4-mini` / Pro `gpt-5.5`
+  - 생성 모델 (GPT IMAGE 2): Pro `gpt-image-2` / Flash 2 `gpt-image-1-mini`
   - 출력 파일: 1K / 2K / 4K (원본 비율 유지, gpt-image-2는 최대 3840×2160)
-- **최종 프롬프트**: 이미지 번역 버튼 옆에 생성 모델로 전달되는 프롬프트가 표시됩니다 (실행 전에는 미리보기, 실행 후에는 실제 사용된 프롬프트)
-- API 키·사전·설정은 브라우저(localStorage)에만 저장되고 서버에 남지 않습니다
+  - 자동 다운로드: 켜면 각 항목이 완료될 때마다 자동 저장
+- **분석 프롬프트 / 생성 프롬프트**: 두 단계에 전달되는 프롬프트를 항상 표시 (실행 전 미리보기 → 실행 후 실제 사용값)
+- API 키·사전·설정·프리셋은 브라우저(localStorage)에만 저장되고 서버에 남지 않습니다
 
 ## 설치 및 실행
 
@@ -46,8 +48,8 @@ curl -X POST http://127.0.0.1:8000/api/translate \
   -F "api_key=sk-..." \               # (필수) OpenAI API 키
   -F "analysis_model=fast" \          # fast(gpt-5.4-mini) | pro(gpt-5.5)
   -F "generation_model=pro" \         # pro(gpt-image-2) | fast(gpt-image-1-mini)
-  -F "accuracy=balanced" \            # fast | balanced | precise
-  -F "enhance=none" \                 # none | sharpen | clean
+  -F "accuracy=0.5" \                 # 0~1 (또는 fast | balanced | precise)
+  -F "enhance=0" \                    # 0~1 (또는 none | sharpen | clean)
   -F "output_size=1k" \               # 1k | 2k | 4k
   -F "glossary=Acme Corp=아크메"      # (선택) 사용자 사전, 한 줄에 하나
 ```
@@ -59,6 +61,7 @@ curl -X POST http://127.0.0.1:8000/api/translate \
   "extracted": "Hello, world!",
   "translated": "안녕, 세계!",
   "prompt": "Edit this image: replace every piece of visible text ...",
+  "analysis_prompt": "Find every distinct piece of text in the attached image ...",
   "image": "data:image/png;base64,....",
   "engine": "gpt-5.4-mini + gpt-image-2 (1024x512)",
   "message": ""

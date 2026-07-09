@@ -3,312 +3,474 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>이미지 번역기</title>
+<title>ImageTrans Pro</title>
 <style>
   :root {
-    --bg: #f6f7f9; --card: #ffffff; --text: #1a1d21; --muted: #6b7280;
-    --accent: #2563eb; --accent-hover: #1d4ed8; --border: #e5e7eb;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #111418; --card: #1b1f26; --text: #e7eaee; --muted: #9aa3af;
-      --accent: #3b82f6; --accent-hover: #60a5fa; --border: #2a3038;
-    }
+    --bg: #f3f3fb; --card: #ffffff; --text: #23263b; --muted: #8a8fa3;
+    --accent: #6c5ce7; --accent-hover: #5a4bd6; --accent-soft: #edeafd;
+    --border: #e9e9f4; --ok: #16b981; --err: #e5484d;
+    --radius: 18px;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     font-family: "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
     background: var(--bg); color: var(--text);
-    max-width: 1200px; margin: 0 auto; padding: 2rem 1rem;
+    max-width: 1280px; margin: 0 auto; padding: 1.25rem 1.25rem 3rem;
+    font-size: 14px;
   }
-  h1 { font-size: 1.5rem; margin-bottom: .25rem; }
-  h2 { font-size: .95rem; margin-bottom: .75rem; }
-  .sub { color: var(--muted); margin-bottom: 1.5rem; font-size: .95rem; }
-  .card {
+
+  /* ── 상단 앱바 ─────────────────────────── */
+  .appbar {
+    display: flex; align-items: center; gap: .75rem; margin-bottom: 1.25rem;
+  }
+  .logo { display: flex; align-items: center; gap: .55rem; font-weight: 800; font-size: 1.15rem; }
+  .logo-mark {
+    width: 30px; height: 30px; border-radius: 9px; background: var(--accent);
+    color: #fff; display: grid; place-items: center; font-size: 15px;
+  }
+  .appbar .spacer { flex: 1; }
+  .iconbtn {
+    width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--card); color: var(--muted); cursor: pointer; font-size: 15px;
+  }
+  .btn {
+    padding: .55rem 1.1rem; border: none; border-radius: 11px; cursor: pointer;
+    font-size: .9rem; font-weight: 600; font-family: inherit;
+  }
+  .btn-primary { background: var(--accent); color: #fff; box-shadow: 0 4px 14px rgba(108,92,231,.35); }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-ghost { background: var(--card); color: var(--muted); border: 1px solid var(--border); }
+  .btn-ghost:hover { color: var(--text); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
+
+  /* ── 메인 3단 그리드 ────────────────────── */
+  .main-grid {
+    display: grid; grid-template-columns: 300px 1fr 340px; gap: 1rem;
+    align-items: stretch;
+  }
+  @media (max-width: 1000px) { .main-grid { grid-template-columns: 1fr; } }
+  .panel {
     background: var(--card); border: 1px solid var(--border);
-    border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem;
+    border-radius: var(--radius); padding: 1.1rem;
+    display: flex; flex-direction: column;
   }
-  /* 가로 3단 배치: 이미지 | 사전 | 설정 */
-  .top-grid {
-    display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 1rem;
-    align-items: stretch; margin-bottom: 1rem;
-  }
-  .top-grid .card { margin-bottom: 0; display: flex; flex-direction: column; }
-  @media (max-width: 900px) { .top-grid { grid-template-columns: 1fr; } }
+  .panel h2 { font-size: .82rem; color: var(--muted); font-weight: 700; margin-bottom: .8rem; letter-spacing: .02em; }
 
-  #drop {
-    border: 2px dashed var(--border); border-radius: 12px;
-    padding: 1.5rem 1rem; text-align: center; cursor: pointer;
-    transition: border-color .15s, background .15s; flex: 1;
-    display: flex; flex-direction: column; justify-content: center; gap: .5rem;
+  /* 좌: 대기열 */
+  #queueList { flex: 1; overflow-y: auto; max-height: 420px; margin-bottom: .8rem; display: flex; flex-direction: column; gap: .5rem; }
+  .qitem {
+    display: flex; align-items: center; gap: .6rem; padding: .45rem;
+    border: 1px solid var(--border); border-radius: 12px; cursor: pointer;
   }
-  #drop.dragover { border-color: var(--accent); background: rgba(37,99,235,.06); }
-  #drop p { color: var(--muted); font-size: .9rem; }
-  #drop strong { color: var(--accent); }
-  #preview { max-width: 100%; max-height: 260px; object-fit: contain; border-radius: 8px; display: none; margin: 0 auto; }
+  .qitem.active { border-color: var(--accent); background: var(--accent-soft); }
+  .qitem img { width: 42px; height: 42px; object-fit: cover; border-radius: 8px; }
+  .qitem .qname { flex: 1; font-size: .8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .qitem .qstate { font-size: .72rem; color: var(--muted); white-space: nowrap; }
+  .qitem .qstate.done { color: var(--ok); }
+  .qitem .qstate.fail { color: var(--err); }
+  #dropzone {
+    border: 2px dashed var(--border); border-radius: 14px; padding: 1.1rem .8rem;
+    text-align: center; color: var(--muted); font-size: .82rem; cursor: pointer; margin-bottom: .8rem;
+    transition: border-color .15s, background .15s;
+  }
+  #dropzone.dragover { border-color: var(--accent); background: var(--accent-soft); }
+  #dropzone strong { color: var(--accent); }
+  #startBtn { width: 100%; padding: .8rem; font-size: 1rem; border-radius: 13px; }
 
-  label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: .25rem; }
-  .field { margin-bottom: .75rem; }
-  select, input[type=password], input[type=text], textarea {
-    padding: .5rem .6rem; border-radius: 8px; border: 1px solid var(--border);
-    background: var(--card); color: var(--text); font-size: .9rem;
-    font-family: inherit; width: 100%;
+  /* 중: 사용자 사전 */
+  #glossary {
+    flex: 1; min-height: 320px; resize: vertical; width: 100%;
+    font-family: ui-monospace, "Cascadia Mono", monospace; font-size: .82rem; line-height: 1.7;
+    padding: .8rem; border-radius: 13px; border: 1px solid var(--border);
+    background: var(--card); color: var(--text);
   }
-  #glossary { flex: 1; min-height: 180px; resize: vertical; }
-  .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem .75rem; }
-  .settings-grid .field { margin-bottom: 0; }
+  .preset-row { display: flex; gap: .5rem; margin-top: .7rem; }
+  .preset-row select { flex: 1; }
 
-  .action-row { display: flex; gap: 1rem; align-items: flex-start; flex-wrap: wrap; }
-  button {
-    padding: .7rem 1.6rem; border: none; border-radius: 8px;
-    background: var(--accent); color: #fff; font-size: 1rem; cursor: pointer;
-    white-space: nowrap;
+  /* 우: 설정 */
+  .setting { margin-bottom: 1.05rem; }
+  .setting-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: .45rem; }
+  .setting-head label { font-size: .8rem; color: var(--text); font-weight: 600; }
+  .setting-head .val { font-size: .85rem; color: var(--accent); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .slider-sub { display: flex; justify-content: space-between; font-size: .68rem; color: var(--muted); margin-top: .2rem; }
+  input[type=range] {
+    width: 100%; accent-color: var(--accent); height: 4px; cursor: pointer;
   }
-  button:hover { background: var(--accent-hover); }
-  button:disabled { opacity: .5; cursor: not-allowed; }
-  .prompt-wrap { flex: 1; min-width: 260px; }
-  #finalPrompt {
-    font-family: ui-monospace, monospace; font-size: .8rem;
-    min-height: 7rem; resize: vertical; color: var(--muted);
+  .pills { display: flex; gap: .4rem; }
+  .pill {
+    padding: .45rem .95rem; border-radius: 999px; border: 1px solid var(--border);
+    background: var(--card); color: var(--muted); font-size: .82rem; font-weight: 600;
+    cursor: pointer; font-family: inherit;
   }
-  #status { margin-top: .75rem; font-size: .9rem; color: var(--muted); min-height: 1.2rem; }
-  #status.error { color: #dc2626; }
+  .pill.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  select, input[type=password], input[type=text] {
+    padding: .5rem .65rem; border-radius: 11px; border: 1px solid var(--border);
+    background: var(--card); color: var(--text); font-size: .85rem; font-family: inherit; width: 100%;
+  }
+  .switch { position: relative; width: 42px; height: 24px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch .track {
+    position: absolute; inset: 0; border-radius: 999px; background: var(--border);
+    transition: background .15s; cursor: pointer;
+  }
+  .switch .track::after {
+    content: ""; position: absolute; width: 18px; height: 18px; border-radius: 50%;
+    background: #fff; top: 3px; left: 3px; transition: left .15s; box-shadow: 0 1px 3px rgba(0,0,0,.25);
+  }
+  .switch input:checked + .track { background: var(--ok); }
+  .switch input:checked + .track::after { left: 21px; }
+  .switch-row { display: flex; justify-content: space-between; align-items: center; }
 
-  .results { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  /* 프롬프트 미리보기 */
+  .prompt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem; }
+  @media (max-width: 800px) { .prompt-grid { grid-template-columns: 1fr; } }
+  .prompt-grid textarea {
+    width: 100%; min-height: 120px; resize: vertical; border: 1px solid var(--border);
+    border-radius: 13px; padding: .7rem; background: var(--card); color: var(--muted);
+    font-family: ui-monospace, monospace; font-size: .72rem; line-height: 1.6;
+  }
+
+  /* 결과 */
+  #status { margin-top: 1rem; font-size: .85rem; color: var(--muted); min-height: 1.2rem; }
+  #status.error { color: var(--err); }
+  .result-section { margin-top: 1rem; display: none; }
+  .box-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: .6rem; }
+  .box-head h2 { margin: 0; }
+  .copy { background: none; border: 1px solid var(--border); color: var(--muted); padding: .25rem .7rem; font-size: .72rem; border-radius: 8px; cursor: pointer; }
+  .copy:hover { background: var(--accent-soft); color: var(--accent); }
+  #resultImg { max-width: 100%; border-radius: 13px; }
+  .results { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem; }
   @media (max-width: 640px) { .results { grid-template-columns: 1fr; } }
-  .box-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: .5rem; }
-  .box-head h2 { margin-bottom: 0; color: var(--muted); font-size: .9rem; }
-  .copy { background: none; border: 1px solid var(--border); color: var(--muted); padding: .2rem .6rem; font-size: .75rem; }
-  .copy:hover { background: var(--border); }
-  pre { white-space: pre-wrap; word-break: break-word; font-family: inherit; font-size: .95rem; line-height: 1.6; min-height: 6rem; }
+  pre { white-space: pre-wrap; word-break: break-word; font-family: inherit; font-size: .88rem; line-height: 1.65; min-height: 4rem; }
   input[type=file] { display: none; }
 </style>
 </head>
 <body>
-  <h1>🖼️ 이미지 번역기</h1>
-  <p class="sub">이미지를 업로드하면 GPT가 텍스트를 번역하고, GPT 이미지 2.0이 번역문으로 치환된 이미지를 생성합니다.</p>
+  <!-- 상단 앱바 -->
+  <div class="appbar">
+    <div class="logo"><span class="logo-mark">⇄</span> ImageTrans Pro</div>
+    <div class="spacer"></div>
+    <button class="iconbtn" id="settingsBtn" title="설정으로 이동">⚙</button>
+    <button class="btn btn-primary" id="downloadAllBtn">⬇ 전체 다운로드</button>
+    <button class="btn btn-ghost" id="clearQueueBtn">✕ 대기열 비우기</button>
+  </div>
 
-  <div class="top-grid">
-    <!-- 1단: 이미지 -->
-    <div class="card">
-      <h2>이미지</h2>
-      <div id="drop">
-        <p><strong>클릭</strong> · <strong>드래그</strong> · <strong>붙여넣기</strong>(Ctrl+V)</p>
-        <img id="preview" alt="미리보기">
+  <div class="main-grid">
+    <!-- 좌: 대기열 / 일괄 번역 -->
+    <div class="panel">
+      <h2>번역 대기열</h2>
+      <div id="dropzone"><strong>클릭</strong> · 드래그 · 붙여넣기(Ctrl+V)<br>여러 장 추가 가능</div>
+      <input type="file" id="fileInput" accept="image/*" multiple>
+      <div id="queueList"></div>
+      <button class="btn btn-primary" id="startBtn" disabled>▶ 일괄 번역 시작</button>
+    </div>
+
+    <!-- 중: 사용자 사전 -->
+    <div class="panel">
+      <h2>사용자 사전 &amp; 용어집</h2>
+      <textarea id="glossary" placeholder='한 줄에 하나씩 "원문=번역" 또는 JSON도 가능&#10;&#10;예)&#10;Acme Corp=아크메&#10;free shipping=무료 배송&#10;&#10;{&#10;  "Alert": "경계",&#10;  "Hunter": "사냥꾼"&#10;}'></textarea>
+      <div class="preset-row">
+        <select id="presetSelect"><option value="">프리셋 불러오기...</option></select>
+        <button class="btn btn-ghost" id="presetSave" title="현재 사전을 프리셋으로 저장">＋</button>
+        <button class="btn btn-ghost" id="presetDelete" title="선택한 프리셋 삭제">🗑</button>
       </div>
-      <input type="file" id="fileInput" accept="image/*">
     </div>
 
-    <!-- 2단: 사용자 사전 -->
-    <div class="card">
-      <h2>사용자 사전</h2>
-      <label for="glossary">한 줄에 하나씩 <code>원문=번역</code> — 번역 시 반드시 이 표기를 따릅니다</label>
-      <textarea id="glossary" placeholder="예)&#10;Acme Corp=아크메&#10;free shipping=무료 배송"></textarea>
-    </div>
-
-    <!-- 3단: 설정 -->
-    <div class="card">
+    <!-- 우: 설정 -->
+    <div class="panel" id="settingsPanel">
       <h2>설정</h2>
-      <div class="field">
-        <label for="apiKey">OpenAI API 키 (필수)</label>
+      <div class="setting">
+        <div class="setting-head"><label for="apiKey">OpenAI API 키 (필수)</label></div>
         <input type="password" id="apiKey" placeholder="sk-..." autocomplete="off">
       </div>
-      <div class="settings-grid">
-        <div class="field">
-          <label for="targetLang">번역할 언어</label>
-          <select id="targetLang">
-            <option value="ko">한국어</option>
-            <option value="en">영어</option>
-            <option value="ja">일본어</option>
-            <option value="zh-CN">중국어 (간체)</option>
-            <option value="es">스페인어</option>
-            <option value="fr">프랑스어</option>
-            <option value="de">독일어</option>
-          </select>
+      <div class="setting">
+        <div class="setting-head"><label for="targetLang">번역할 언어</label></div>
+        <select id="targetLang">
+          <option value="ko">한국어</option>
+          <option value="en">영어</option>
+          <option value="ja">일본어</option>
+          <option value="zh-CN">중국어 (간체)</option>
+          <option value="es">스페인어</option>
+          <option value="fr">프랑스어</option>
+          <option value="de">독일어</option>
+        </select>
+      </div>
+      <div class="setting">
+        <div class="setting-head"><label for="accuracy">분석 정확성 (번역 정확도)</label><span class="val" id="accuracyVal">0.5</span></div>
+        <input type="range" id="accuracy" min="0" max="1" step="0.1" value="0.5">
+        <div class="slider-sub"><span>빠르게</span><span>정밀하게</span></div>
+      </div>
+      <div class="setting">
+        <div class="setting-head"><label for="enhance">생성 정확성 (이미지 보정)</label><span class="val" id="enhanceVal">0.0</span></div>
+        <input type="range" id="enhance" min="0" max="1" step="0.1" value="0">
+        <div class="slider-sub"><span>원본 유지</span><span>적극 보정</span></div>
+      </div>
+      <div class="setting">
+        <div class="setting-head"><label>분석 모델 (속도 vs 정밀)</label></div>
+        <div class="pills" data-setting="analysisModel">
+          <button class="pill on" data-value="fast" title="gpt-5.4-mini">Flash</button>
+          <button class="pill" data-value="pro" title="gpt-5.5">Pro</button>
         </div>
-        <div class="field">
-          <label for="accuracy">번역 정확도</label>
-          <select id="accuracy">
-            <option value="fast">빠름</option>
-            <option value="balanced" selected>균형</option>
-            <option value="precise">정밀</option>
-          </select>
+      </div>
+      <div class="setting">
+        <div class="setting-head"><label>생성 모델 (GPT IMAGE 2)</label></div>
+        <div class="pills" data-setting="generationModel">
+          <button class="pill on" data-value="pro" title="gpt-image-2">Pro</button>
+          <button class="pill" data-value="fast" title="gpt-image-1-mini">Flash 2</button>
         </div>
-        <div class="field">
-          <label for="analysisModel">분석 모델</label>
-          <select id="analysisModel">
-            <option value="fast" selected>빠름 (gpt-5.4-mini)</option>
-            <option value="pro">프로 (gpt-5.5)</option>
-          </select>
+      </div>
+      <div class="setting">
+        <div class="setting-head"><label>출력 파일</label></div>
+        <div class="pills" data-setting="outputSize">
+          <button class="pill on" data-value="1k">1K</button>
+          <button class="pill" data-value="2k">2K</button>
+          <button class="pill" data-value="4k">4K</button>
         </div>
-        <div class="field">
-          <label for="generationModel">생성 모델</label>
-          <select id="generationModel">
-            <option value="pro" selected>프로 (gpt-image-2)</option>
-            <option value="fast">빠름 (gpt-image-1-mini)</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="enhance">이미지 보정</label>
-          <select id="enhance">
-            <option value="none" selected>없음</option>
-            <option value="sharpen">선명하게</option>
-            <option value="clean">노이즈/배경 정리</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="outputSize">출력 파일</label>
-          <select id="outputSize">
-            <option value="1k" selected>1K</option>
-            <option value="2k">2K</option>
-            <option value="4k">4K</option>
-          </select>
-        </div>
+      </div>
+      <div class="setting switch-row">
+        <div class="setting-head" style="margin:0"><label for="autoDownload">자동 다운로드</label></div>
+        <label class="switch">
+          <input type="checkbox" id="autoDownload">
+          <span class="track"></span>
+        </label>
       </div>
     </div>
   </div>
 
-  <!-- 실행 + 최종 프롬프트 -->
-  <div class="card">
-    <div class="action-row">
-      <button id="go" disabled>이미지 번역</button>
-      <div class="prompt-wrap">
-        <label for="finalPrompt">최종 프롬프트 (이미지 생성 모델에 전달되는 내용)</label>
-        <textarea id="finalPrompt" readonly></textarea>
-      </div>
+  <!-- 분석/생성 프롬프트 미리보기 -->
+  <div class="prompt-grid">
+    <div>
+      <h2 style="font-size:.82rem;color:var(--muted);font-weight:700;margin-bottom:.5rem">분석 프롬프트</h2>
+      <textarea id="analysisPrompt" readonly></textarea>
     </div>
-    <div id="status"></div>
+    <div>
+      <h2 style="font-size:.82rem;color:var(--muted);font-weight:700;margin-bottom:.5rem">생성 프롬프트</h2>
+      <textarea id="generationPrompt" readonly></textarea>
+    </div>
   </div>
 
-  <div class="card" id="resultCard" style="display:none">
+  <div id="status"></div>
+
+  <!-- 결과 -->
+  <div class="panel result-section" id="resultCard">
     <div class="box-head">
-      <h2>번역된 이미지</h2>
-      <a id="download" download="translated.png"><button class="copy">다운로드</button></a>
+      <h2>번역된 이미지 <span id="resultName" style="font-weight:400"></span></h2>
+      <a id="download"><button class="copy">다운로드</button></a>
     </div>
-    <img id="resultImg" style="max-width:100%;border-radius:8px" alt="번역된 이미지">
+    <img id="resultImg" alt="번역된 이미지">
   </div>
-
-  <div class="results">
-    <div class="card">
+  <div class="results result-section" id="textResults">
+    <div class="panel">
       <div class="box-head"><h2>추출된 텍스트</h2><button class="copy" data-target="extracted">복사</button></div>
       <pre id="extracted"></pre>
     </div>
-    <div class="card">
+    <div class="panel">
       <div class="box-head"><h2>번역 결과</h2><button class="copy" data-target="translated">복사</button></div>
       <pre id="translated"></pre>
     </div>
   </div>
 
 <script>
-const drop = document.getElementById('drop');
-const fileInput = document.getElementById('fileInput');
-const preview = document.getElementById('preview');
-const go = document.getElementById('go');
-const status = document.getElementById('status');
-let currentFile = null;
-
 const LANG_NAMES = { ko: 'Korean', en: 'English', ja: 'Japanese', 'zh-CN': 'Simplified Chinese', es: 'Spanish', fr: 'French', de: 'German' };
+const ACCURACY_NOTES = {
+  fast: 'Translate quickly and naturally.',
+  balanced: 'Translate naturally while keeping meaning accurate.',
+  precise: 'Carefully verify every number, unit, date, and proper noun. Prefer precise terminology over fluency. Re-read the image to double-check ambiguous characters before translating.',
+};
 const ENHANCE_NOTES = {
   none: '',
   sharpen: 'Also subtly enhance overall sharpness and clean up compression artifacts.',
   clean: 'Also clean up the image: remove noise and compression artifacts, and make the background around replaced text uniform and tidy.',
 };
+const $ = id => document.getElementById(id);
 
-// 서버의 build_generation_prompt와 같은 형식으로 최종 프롬프트를 미리 보여준다.
-// 번역 목록은 분석이 끝나야 채워지므로 실행 전에는 자리표시자를 넣는다.
-function buildPromptPreview(translationLines) {
-  const lang = LANG_NAMES[document.getElementById('targetLang').value];
-  const lines = translationLines || '(분석 모델이 만든 "원문" → "번역" 목록이 여기에 채워집니다)';
-  let p = `Edit this image: replace every piece of visible text with its ${lang} translation below, as if the image had originally been made in ${lang}. Keep the layout, font style, text size, colors, and background exactly the same. Do not alter any non-text elements.\n\nTranslations to apply:\n${lines}`;
-  const note = ENHANCE_NOTES[document.getElementById('enhance').value];
+// ── 상태 ──────────────────────────────
+let queue = [];        // {id, file, thumb, status: wait|run|done|fail, result}
+let selectedId = null;
+let running = false;
+const settings = { analysisModel: 'fast', generationModel: 'pro', outputSize: '1k' };
+
+// ── 프롬프트 미리보기 (서버 템플릿과 동일 형식) ──
+function accuracyKey(v) { return v < 0.33 ? 'fast' : v < 0.66 ? 'balanced' : 'precise'; }
+function enhanceKey(v) { return v < 0.2 ? 'none' : v < 0.6 ? 'sharpen' : 'clean'; }
+
+function buildAnalysisPreview() {
+  const lang = LANG_NAMES[$('targetLang').value];
+  const g = $('glossary').value.trim();
+  let p = `Find every distinct piece of text in the attached image (titles, paragraphs, labels, buttons, captions). For each, report the original text exactly as written and its translation into ${lang}. ${ACCURACY_NOTES[accuracyKey(+$('accuracy').value)]} List blocks in reading order. Do not invent text that is not in the image.`;
+  if (g) p += `\n\nUser dictionary (MUST be applied exactly; format: source=translation):\n${g}`;
+  return p;
+}
+
+function buildGenerationPreview(lines) {
+  const lang = LANG_NAMES[$('targetLang').value];
+  let p = `Edit this image: replace every piece of visible text with its ${lang} translation below, as if the image had originally been made in ${lang}. Keep the layout, font style, text size, colors, and background exactly the same. Do not alter any non-text elements.\n\nTranslations to apply:\n${lines || '(분석 후 "원문" → "번역" 목록이 채워집니다)'}`;
+  const note = ENHANCE_NOTES[enhanceKey(+$('enhance').value)];
   if (note) p += `\n\n${note}`;
   return p;
 }
 
-function refreshPrompt() {
-  document.getElementById('finalPrompt').value = buildPromptPreview(null);
+function refreshPrompts() {
+  $('analysisPrompt').value = buildAnalysisPreview();
+  $('generationPrompt').value = buildGenerationPreview(null);
 }
 
-function setFile(file) {
-  if (!file || !file.type.startsWith('image/')) {
-    setStatus('이미지 파일만 업로드할 수 있습니다.', true);
+// ── 대기열 ─────────────────────────────
+function addFiles(files) {
+  for (const f of files) {
+    if (!f.type.startsWith('image/')) continue;
+    queue.push({ id: crypto.randomUUID(), file: f, thumb: URL.createObjectURL(f), status: 'wait', result: null });
+  }
+  renderQueue();
+}
+
+const STATE_LABEL = { wait: '대기', run: '번역 중…', done: '완료', fail: '실패' };
+function renderQueue() {
+  const list = $('queueList');
+  list.innerHTML = '';
+  for (const q of queue) {
+    const div = document.createElement('div');
+    div.className = 'qitem' + (q.id === selectedId ? ' active' : '');
+    div.innerHTML = `<img src="${q.thumb}"><span class="qname">${q.file.name}</span><span class="qstate ${q.status}">${STATE_LABEL[q.status]}</span>`;
+    div.onclick = () => { selectedId = q.id; renderQueue(); showResult(q); };
+    list.appendChild(div);
+  }
+  $('startBtn').disabled = running || !queue.some(q => q.status === 'wait' || q.status === 'fail');
+}
+
+function showResult(q) {
+  if (!q || !q.result) {
+    $('resultCard').style.display = 'none';
+    $('textResults').style.display = 'none';
     return;
   }
-  currentFile = file;
-  preview.src = URL.createObjectURL(file);
-  preview.style.display = 'block';
-  go.disabled = false;
-  setStatus('');
+  const r = q.result;
+  $('extracted').textContent = r.extracted;
+  $('translated').textContent = r.translated;
+  if (r.analysis_prompt) $('analysisPrompt').value = r.analysis_prompt;
+  if (r.prompt) $('generationPrompt').value = r.prompt;
+  if (r.image) {
+    $('resultImg').src = r.image;
+    $('download').href = r.image;
+    $('download').download = downloadName(q);
+    $('resultName').textContent = `— ${q.file.name}`;
+    $('resultCard').style.display = 'block';
+  }
+  $('textResults').style.display = 'grid';
 }
+
+function downloadName(q) {
+  return q.file.name.replace(/\.[^.]+$/, '') + '.translated.png';
+}
+
+function triggerDownload(q) {
+  const a = document.createElement('a');
+  a.href = q.result.image;
+  a.download = downloadName(q);
+  a.click();
+}
+
+// ── 번역 실행 ──────────────────────────
+async function translateOne(q) {
+  const form = new FormData();
+  form.append('file', q.file);
+  form.append('target_lang', $('targetLang').value);
+  form.append('api_key', $('apiKey').value.trim());
+  form.append('analysis_model', settings.analysisModel);
+  form.append('generation_model', settings.generationModel);
+  form.append('accuracy', $('accuracy').value);
+  form.append('enhance', $('enhance').value);
+  form.append('output_size', settings.outputSize);
+  form.append('glossary', $('glossary').value);
+  const res = await fetch('/api/translate', { method: 'POST', body: form });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || '요청 실패');
+  return data;
+}
+
+$('startBtn').addEventListener('click', async () => {
+  const apiKey = $('apiKey').value.trim();
+  if (!apiKey) { setStatus('OpenAI API 키를 입력해 주세요.', true); return; }
+  running = true;
+  renderQueue();
+  const targets = queue.filter(q => q.status === 'wait' || q.status === 'fail');
+  let done = 0, fail = 0;
+  for (const q of targets) {
+    q.status = 'run'; renderQueue();
+    setStatus(`번역 중... (${done + fail + 1}/${targets.length}) — ${q.file.name}`);
+    try {
+      q.result = await translateOne(q);
+      q.status = 'done'; done++;
+      selectedId = q.id;
+      showResult(q);
+      if (q.result.image && $('autoDownload').checked) triggerDownload(q);
+    } catch (err) {
+      q.status = 'fail'; q.error = err.message; fail++;
+      setStatus(`${q.file.name}: ${err.message}`, true);
+    }
+    renderQueue();
+  }
+  running = false;
+  renderQueue();
+  setStatus(fail ? `완료 ${done}건 / 실패 ${fail}건` : `전체 완료! (${done}건)`, !!fail && !done);
+});
+
+$('downloadAllBtn').addEventListener('click', () => {
+  const doneItems = queue.filter(q => q.status === 'done' && q.result?.image);
+  if (!doneItems.length) { setStatus('다운로드할 완료 항목이 없습니다.', true); return; }
+  doneItems.forEach((q, i) => setTimeout(() => triggerDownload(q), i * 300));
+});
+
+$('clearQueueBtn').addEventListener('click', () => {
+  queue = []; selectedId = null;
+  renderQueue(); showResult(null); setStatus('');
+});
+
+$('settingsBtn').addEventListener('click', () => $('settingsPanel').scrollIntoView({ behavior: 'smooth' }));
 
 function setStatus(msg, isError = false) {
-  status.textContent = msg;
-  status.className = isError ? 'error' : '';
+  $('status').textContent = msg;
+  $('status').className = isError ? 'error' : '';
 }
 
-drop.addEventListener('click', () => fileInput.click());
-fileInput.addEventListener('change', () => setFile(fileInput.files[0]));
-
-['dragover', 'dragenter'].forEach(ev => drop.addEventListener(ev, e => {
-  e.preventDefault(); drop.classList.add('dragover');
-}));
-['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => {
-  e.preventDefault(); drop.classList.remove('dragover');
-}));
-drop.addEventListener('drop', e => setFile(e.dataTransfer.files[0]));
-
+// ── 업로드 입력 ─────────────────────────
+const dz = $('dropzone');
+dz.addEventListener('click', () => $('fileInput').click());
+$('fileInput').addEventListener('change', e => { addFiles(e.target.files); e.target.value = ''; });
+['dragover', 'dragenter'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('dragover'); }));
+['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('dragover'); }));
+dz.addEventListener('drop', e => addFiles(e.dataTransfer.files));
 document.addEventListener('paste', e => {
-  const item = [...e.clipboardData.items].find(i => i.type.startsWith('image/'));
-  if (item) setFile(item.getAsFile());
+  const items = [...e.clipboardData.items].filter(i => i.type.startsWith('image/'));
+  if (items.length) addFiles(items.map(i => i.getAsFile()));
 });
 
-go.addEventListener('click', async () => {
-  if (!currentFile) return;
-  const apiKey = document.getElementById('apiKey').value.trim();
-  if (!apiKey) {
-    setStatus('OpenAI API 키를 입력해 주세요.', true);
-    return;
-  }
-  go.disabled = true;
-  setStatus('1단계: 텍스트 분석·번역 중... → 2단계: 이미지 생성 중... (수십 초 걸릴 수 있습니다)');
-  document.getElementById('extracted').textContent = '';
-  document.getElementById('translated').textContent = '';
-  document.getElementById('resultCard').style.display = 'none';
-
-  const form = new FormData();
-  form.append('file', currentFile);
-  form.append('target_lang', document.getElementById('targetLang').value);
-  form.append('api_key', apiKey);
-  form.append('analysis_model', document.getElementById('analysisModel').value);
-  form.append('generation_model', document.getElementById('generationModel').value);
-  form.append('accuracy', document.getElementById('accuracy').value);
-  form.append('enhance', document.getElementById('enhance').value);
-  form.append('output_size', document.getElementById('outputSize').value);
-  form.append('glossary', document.getElementById('glossary').value);
-
-  try {
-    const res = await fetch('/api/translate', { method: 'POST', body: form });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || '요청 실패');
-    document.getElementById('extracted').textContent = data.extracted;
-    document.getElementById('translated').textContent = data.translated;
-    if (data.prompt) document.getElementById('finalPrompt').value = data.prompt;
-    if (data.image) {
-      document.getElementById('resultImg').src = data.image;
-      document.getElementById('download').href = data.image;
-      document.getElementById('resultCard').style.display = 'block';
-    }
-    setStatus(data.message || (data.engine ? `완료! (${data.engine})` : '완료!'));
-  } catch (err) {
-    setStatus(err.message, true);
-  } finally {
-    go.disabled = false;
-  }
+// ── 필 토글 ────────────────────────────
+document.querySelectorAll('.pills').forEach(group => {
+  group.querySelectorAll('.pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      group.querySelectorAll('.pill').forEach(b => b.classList.remove('on'));
+      btn.classList.add('on');
+      settings[group.dataset.setting] = btn.dataset.value;
+      localStorage.setItem(group.dataset.setting, btn.dataset.value);
+      refreshPrompts();
+    });
+  });
 });
 
+// ── 슬라이더 값 표시 ────────────────────
+for (const [id, valId] of [['accuracy', 'accuracyVal'], ['enhance', 'enhanceVal']]) {
+  $(id).addEventListener('input', () => {
+    $(valId).textContent = (+$(id).value).toFixed(1);
+    localStorage.setItem(id, $(id).value);
+    refreshPrompts();
+  });
+}
+
+// ── 복사 버튼 ──────────────────────────
 document.querySelectorAll('.copy[data-target]').forEach(btn => {
   btn.addEventListener('click', async () => {
-    const text = document.getElementById(btn.dataset.target).textContent;
+    const text = $(btn.dataset.target).textContent;
     if (!text) return;
     await navigator.clipboard.writeText(text);
     btn.textContent = '복사됨!';
@@ -316,21 +478,70 @@ document.querySelectorAll('.copy[data-target]').forEach(btn => {
   });
 });
 
-// 입력값을 브라우저에 저장해서 다시 입력하지 않아도 되게 한다
+// ── 프리셋 ─────────────────────────────
+function loadPresets() {
+  const presets = JSON.parse(localStorage.getItem('glossaryPresets') || '{}');
+  const sel = $('presetSelect');
+  sel.innerHTML = '<option value="">프리셋 불러오기...</option>';
+  for (const name of Object.keys(presets)) {
+    const opt = document.createElement('option');
+    opt.value = name; opt.textContent = name;
+    sel.appendChild(opt);
+  }
+  return presets;
+}
+$('presetSelect').addEventListener('change', () => {
+  const presets = JSON.parse(localStorage.getItem('glossaryPresets') || '{}');
+  const name = $('presetSelect').value;
+  if (name && presets[name] !== undefined) {
+    $('glossary').value = presets[name];
+    localStorage.setItem('userGlossary', presets[name]);
+    refreshPrompts();
+  }
+});
+$('presetSave').addEventListener('click', () => {
+  const name = prompt('프리셋 이름을 입력하세요:');
+  if (!name) return;
+  const presets = JSON.parse(localStorage.getItem('glossaryPresets') || '{}');
+  presets[name] = $('glossary').value;
+  localStorage.setItem('glossaryPresets', JSON.stringify(presets));
+  loadPresets();
+  $('presetSelect').value = name;
+});
+$('presetDelete').addEventListener('click', () => {
+  const name = $('presetSelect').value;
+  if (!name) return;
+  const presets = JSON.parse(localStorage.getItem('glossaryPresets') || '{}');
+  delete presets[name];
+  localStorage.setItem('glossaryPresets', JSON.stringify(presets));
+  loadPresets();
+});
+
+// ── 저장된 입력 복원 ────────────────────
 const persisted = [
-  ['apiKey', 'openaiApiKey'], ['glossary', 'userGlossary'],
-  ['targetLang', 'targetLang'], ['accuracy', 'accuracy'],
-  ['analysisModel', 'analysisModel'], ['generationModel', 'generationModel'],
-  ['enhance', 'enhance'], ['outputSize', 'outputSize'],
+  ['apiKey', 'openaiApiKey'], ['glossary', 'userGlossary'], ['targetLang', 'targetLang'],
+  ['accuracy', 'accuracy'], ['enhance', 'enhance'],
 ];
 for (const [id, key] of persisted) {
-  const el = document.getElementById(id);
+  const el = $(id);
   const saved = localStorage.getItem(key);
   if (saved !== null) el.value = saved;
-  el.addEventListener('input', () => localStorage.setItem(key, el.value));
-  el.addEventListener('change', () => { localStorage.setItem(key, el.value); refreshPrompt(); });
+  el.addEventListener('input', () => { localStorage.setItem(key, el.value); refreshPrompts(); });
 }
-refreshPrompt();
+for (const key of ['analysisModel', 'generationModel', 'outputSize']) {
+  const saved = localStorage.getItem(key);
+  if (saved) {
+    settings[key] = saved;
+    const group = document.querySelector(`.pills[data-setting="${key}"]`);
+    group.querySelectorAll('.pill').forEach(b => b.classList.toggle('on', b.dataset.value === saved));
+  }
+}
+if (localStorage.getItem('autoDownload') === '1') $('autoDownload').checked = true;
+$('autoDownload').addEventListener('change', () => localStorage.setItem('autoDownload', $('autoDownload').checked ? '1' : '0'));
+$('accuracyVal').textContent = (+$('accuracy').value).toFixed(1);
+$('enhanceVal').textContent = (+$('enhance').value).toFixed(1);
+refreshPrompts();
+renderQueue();
 </script>
 </body>
 </html>
